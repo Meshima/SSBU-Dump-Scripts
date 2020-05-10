@@ -1,6 +1,6 @@
 import re, ctypes
 from hash40 import Hash40
-from util import adjustr2Output
+from util import adjustr2Output, UseOpcode
 
 class Constant:
     def __init__(self, index, name):
@@ -177,27 +177,23 @@ class SubScript:
 
         self.CurrentAddress = 0
 
-        for l in self.script.split('\r'):
-            if len(l) > 0:
-                if l[0] == '|' or l[0] == '\\':
-                    if ignoreLine:
-                        ignoreLine = False
-                    else:
-                        a = l.split(';')[0].strip().split("  ")
-                        hasValue = None
-                        for c in l.split(';')[1:]:
-                            t = re.search(" 0x[0-9a-f]+ ", c)
-                            if t:
-                                hasValue = t.group()
-                        line = a[len(a)-1][1:]
-                        testStr = re.search("str\.([a-z]|[A-Z]|[0-9]|_)+", line) #Replace string for hex value
-                        if testStr:
-                            line = line.replace(testStr.group(), hasValue)
-                        self.lines.append(line)
-                        address = re.search("0x[0-9a-f]{8}", l)
-                        if address:
-                            address = address.group()
-                        self.address.append(address)
+        for json in script["ops"]:
+            line = json["disasm"]
+            address = hex(json["offset"])
+            opCode = json["opcode"]
+            testStr = re.search("str\.([a-z]|[A-Z]|[0-9]|_)+", line) #Replace string for hex value
+            if testStr:
+                line = opCode
+            else:
+                t = line.split(' ')
+                op = t[0]
+                val = ''.join(t[1:])
+
+                if op != 'bl' and UseOpcode(val):
+                    line = opCode
+
+            self.lines.append(line)
+            self.address.append(address)
 
     def parse_movz(self, movz):
         p = movz.split(',')[0]
@@ -382,7 +378,7 @@ class SubScript:
             if 'fcn.' in bl:
                 bl = bl.replace('fcn.', '0x')
             if self.r2:
-                script = adjustr2Output(self.r2.cmd('s {0};aF;pdf'.format(hex(int(bl,16)))))
+                script = self.r2.cmdj('s {0};aF;pdfj'.format(hex(int(bl,16))))
                 self.SubScript = SubScript(self.r2, script, self.Sections)
         elif bl == 'method.lib::L2CValue.L2CValue_int':
             if isinstance(self.CurrentValue,Value):
@@ -750,9 +746,9 @@ class SubScript:
 
 
 class Parser:
-    def __init__(self, r2, script, scriptName, sectionList = []):
+    def __init__(self, r2, script, address, scriptName, sectionList = []):
         self.scriptName = scriptName
-        #print(self.scriptName)
+        #print(self.scriptName + ' - ' + address)
         self.main = SubScript(r2, script, sectionList)
         self.main.Parse()
 
